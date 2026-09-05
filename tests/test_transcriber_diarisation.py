@@ -149,6 +149,37 @@ class TranscribeDiarisedTimestampTests(unittest.TestCase):
         self.assertFalse(result["is_diarised"])
         self.assertIsNone(result["diarised_text"])
 
+    def test_discarded_bleed_does_not_lower_retained_channel_coverage(self):
+        for dropped in ("mic", "system"):
+            with self.subTest(dropped=dropped):
+                segment = {"text": "The budget is approved.", "start": 0.0, "end": 1.0}
+                self.transcriber.transcribe_audio = Mock(side_effect=[
+                    {"text": segment["text"], "segments": [dict(segment)],
+                     "window_coverage": 0.2 if dropped == "mic" else 1.0},
+                    {"text": segment["text"], "segments": [dict(segment)],
+                     "window_coverage": 0.2 if dropped == "system" else 1.0},
+                ])
+                with patch("src.transcriber._segment_rms", side_effect=[
+                    0.1 if dropped == "mic" else 1.0,
+                    0.1 if dropped == "system" else 1.0,
+                ]):
+                    result = self.transcriber.transcribe_diarised(self.audio_path)
+                self.assertEqual(result["window_coverage"], 1.0)
+                self.assertFalse(result["is_diarised"])
+
+    def test_retained_channel_still_contributes_low_coverage(self):
+        self.transcriber.transcribe_audio = Mock(side_effect=[
+            {"text": "The budget is approved.", "segments": [
+                {"text": "The budget is approved.", "start": 0.0, "end": 1.0},
+            ], "window_coverage": 1.0},
+            {"text": "Deployment starts tomorrow.", "segments": [
+                {"text": "Deployment starts tomorrow.", "start": 2.0, "end": 3.0},
+            ], "window_coverage": 0.2},
+        ])
+        result = self.transcriber.transcribe_diarised(self.audio_path)
+        self.assertEqual(result["window_coverage"], 0.2)
+        self.assertTrue(result["is_diarised"])
+
 
 class TranscribeDiarisedMultiSpeakerTests(unittest.TestCase):
     """Acoustic per-channel diarization (steno-diarize sidecar) layered on

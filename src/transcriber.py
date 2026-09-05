@@ -2016,7 +2016,7 @@ class WhisperTranscriber:
             "duration_seconds": result.get("duration_seconds"),
             "detected_language": result.get("detected_language"),
             "detected_language_probability": result.get("detected_language_probability"),
-            # Fraction of transcription windows that came back usable, or None
+            # Fraction of audio read by usable transcription windows, or None
             # where the backend does no windowing of its own. Only the onnx
             # backend can lose a window silently (parakeet-mlx has no per-chunk
             # except, so a bad window fails the whole call loudly) -- but the
@@ -2689,12 +2689,16 @@ class WhisperTranscriber:
                 # list[{"start", "channel", "diarization_speaker_id"}], one
                 # per turn -- see comment above turn_manifest's construction.
                 "turn_manifest": assembled.turn_manifest,
-                # Worst channel wins: a meeting is only as complete as the
-                # side that lost the most. None when no channel reported a
+                # Worst retained channel wins: discarded bleed contributes
+                # no transcript and must not trigger rescue. Use the side
+                # that lost the most. None when no channel reported a
                 # figure (whisper.cpp, parakeet-mlx, or a file short enough
                 # to need no windowing) -- absence means "unknown", never
                 # "complete", so callers must not read it as a pass.
-                "window_coverage": _worst_window_coverage(mic_result, sys_result),
+                "window_coverage": _worst_window_coverage(
+                    mic_result if mic_segments else None,
+                    sys_result if system_segments else None,
+                ),
             }
         finally:
             # Clean up temp channel files
